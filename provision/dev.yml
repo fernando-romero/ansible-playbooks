@@ -1,0 +1,31 @@
+---
+- hosts: localhost
+  connection: local
+  serial: 1
+  gather_facts: no
+  vars:
+    my_pub_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+    env_name: dev
+    instance_count: 2
+  tasks:
+  - name: Public key present
+    digital_ocean: >
+      state=present
+      command=ssh
+      name="{{ inventory_hostname }}"
+      ssh_pub_key="{{ my_pub_key }}"
+  - name: Droplets present
+    digital_ocean:
+      state: present
+      command: droplet
+      name: "{{ item }}"
+      unique_name: yes
+      # 512mb
+      size_id: 66
+      # ubuntu-14-04-x64
+      image_id: 9801950
+      # nyc2
+      region_id: 4
+    with_sequence: start=1 end={{ instance_count }} format={{ env_name }}-%03d
+    register: droplets
+  - debug: msg="{{ droplets }}"
