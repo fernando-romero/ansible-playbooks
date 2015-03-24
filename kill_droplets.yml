@@ -1,0 +1,25 @@
+# ansible-playbook kill_droplets.yml -i "localhost," -e "env=dev"
+
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - vars/{{env}}.yml
+  tasks:
+
+    - name: Mesos master droplets deleted
+      digital_ocean:
+        state: deleted
+        command: droplet
+        name: "{{ item }}"
+        unique_name: yes
+      with_sequence: start=1 end={{ master_instances }} format={{ env }}-master-%03d
+
+    - name: Mesos slave droplets deleted
+      digital_ocean:
+        state: deleted
+        command: droplet
+        name: "{{ item }}"
+        unique_name: yes
+      with_sequence: start=1 end={{ slave_instances }} format={{ env }}-slave-%03d

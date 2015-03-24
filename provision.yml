@@ -1,0 +1,71 @@
+# ansible-playbook provision.yml -i "localhost," -e "env=dev"
+
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    my_pub_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+  vars_files:
+    - vars/{{env}}.yml
+
+  tasks:
+    - name: Public key present
+      digital_ocean: >
+        state=present
+        command=ssh
+        name=macbook
+        ssh_pub_key="{{ my_pub_key }}"
+      register: my_key
+
+    - name: Mesos master droplets present
+      digital_ocean:
+        state: present
+        command: droplet
+        name: "{{ item }}"
+        unique_name: yes
+        # 512mb
+        size_id: 66
+        # ubuntu-14-04-x64
+        image_id: 9801950
+        # nyc2
+        region_id: 4
+        ssh_key_ids: "{{ my_key.ssh_key.id }}"
+      with_sequence: start=1 end={{ master_instances }} format={{ env }}-master-%03d
+      register: masters
+
+    - name: Add master droplets to masters group
+      add_host:
+        name: "{{ item.droplet.ip_address }}"
+        groups: masters
+      when: item.droplet is defined
+      with_items: masters.results
+
+- hosts: masters
+  remote_user: root
+  gather_facts: false
+
+  tasks:
+    - name: Add key for Mesosphere repository
+      apt_key: url=http://keyserver.ubuntu.com/pks/lookup?op=get&fingerprint=on&search=0xE56151BF state=present
+      sudo: yes
+
+    - name: Determine Linux distribution distributor
+      shell: "lsb_release -is | tr '[:upper:]' '[:lower:]'"
+      register: release_distributor
+
+    - name: Determine Linux distribution codename
+      command: lsb_release -cs
+      register: release_codename
+
+    - name: Add Mesosphere repository to sources list
+      copy:
+        content: "deb http://repos.mesosphere.io/{{release_distributor.stdout}} {{release_codename.stdout}} main"
+        dest: /etc/apt/sources.list.d/mesosphere.list
+        mode: 0644
+
+    - name: Update apt cache
+      apt: update_cache=yes
+
+    - name: Install Mesosphere
+      apt: pkg=mesosphere state=present
