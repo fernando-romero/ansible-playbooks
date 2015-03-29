@@ -3,7 +3,7 @@
 ---
 - hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: no
   vars:
     my_pub_key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
   vars_files:
@@ -14,7 +14,7 @@
       digital_ocean: >
         state=present
         command=ssh
-        name=macbook
+        name=ansible
         ssh_pub_key="{{ my_pub_key }}"
       register: my_key
 
@@ -36,16 +36,22 @@
 
     - name: Add master droplets to masters group
       add_host:
-        name: "{{ item.droplet.ip_address }}"
+        name: "{{ item.1.droplet.ip_address }}"
         groups: masters
-      when: item.droplet is defined
-      with_items: masters.results
+        zookeeper_id: "{{ item.0 + 1 }}"
+      when: item.1.droplet is defined
+      with_indexed_items: masters.results
+
+    - name: Set zookeper fact
+      set_fact:
+        zookeper_url: "zk://{% for host in groups['masters'] -%}{{ host + ':2181' }}{%- if not loop.last %},{% endif -%}{%- endfor %}/mesos"
 
 - hosts: masters
   remote_user: root
-  gather_facts: false
+  gather_facts: yes
 
   tasks:
+
     - name: Add key for Mesosphere repository
       apt_key: url=http://keyserver.ubuntu.com/pks/lookup?op=get&fingerprint=on&search=0xE56151BF state=present
       sudo: yes
@@ -60,7 +66,7 @@
 
     - name: Add Mesosphere repository to sources list
       copy:
-        content: "deb http://repos.mesosphere.io/{{release_distributor.stdout}} {{release_codename.stdout}} main"
+        content: "deb http://repos.mesosphere.io/{{ release_distributor.stdout }} {{ release_codename.stdout }} main"
         dest: /etc/apt/sources.list.d/mesosphere.list
         mode: 0644
 
@@ -69,3 +75,9 @@
 
     - name: Install Mesosphere
       apt: pkg=mesosphere state=present
+
+    - name: Set zookeper masters
+      lineinfile: dest=/etc/mesos/zk regexp="^zk" line="{{ hostvars.localhost.zookeper_url }}" state=present
+
+    - name: Set zookeper id
+      lineinfile: dest=/etc/zookeeper/conf/myid regexp="." line={{ hostvars[inventory_hostname].zookeeper_id }} state=present
