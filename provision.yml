@@ -42,13 +42,9 @@
       when: item.1.droplet is defined
       with_indexed_items: masters.results
 
-    - name: Set zookeper fact
-      set_fact:
-        zookeper_url: "zk://{% for host in groups['masters'] -%}{{ host + ':2181' }}{%- if not loop.last %},{% endif -%}{%- endfor %}/mesos"
-
 - hosts: masters
   remote_user: root
-  gather_facts: yes
+  gather_facts: no
 
   tasks:
 
@@ -76,8 +72,14 @@
     - name: Install Mesosphere
       apt: pkg=mesosphere state=present
 
-    - name: Set zookeper masters
-      lineinfile: dest=/etc/mesos/zk regexp="^zk" line="{{ hostvars.localhost.zookeper_url }}" state=present
+    - name: Configure mesos-zookeeper
+      template: src=zk dest=/etc/mesos/zk
+
+    - name: Remove default line from zookeeper id file
+      lineinfile: dest=/etc/zookeeper/conf/myid line="replace this text with the cluster-unique zookeeper's instance id (1-255)" state=absent
 
     - name: Set zookeper id
-      lineinfile: dest=/etc/zookeeper/conf/myid regexp="." line={{ hostvars[inventory_hostname].zookeeper_id }} state=present
+      lineinfile: dest=/etc/zookeeper/conf/myid line={{ hostvars[inventory_hostname].zookeeper_id }} state=present
+
+    - name: Configure zookeeper
+      template: src=zoo.cfg dest=/etc/zookeeper/conf/zoo.cfg
